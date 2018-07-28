@@ -26,10 +26,13 @@
 #include "conf_clock.h"
 #include "stm32f4xx_conf.h"
 #include "main.h"
+#include <queue.h>
+
  // again, added because ST didn't put it here ?
 /** @addtogroup STM32F4_Discovery_Peripheral_Examples
   * @{
   */
+static QueueHandle_t uart_txq;    // TX queue for UART
 
 /** @addtogroup IO_Toggle
   * @{
@@ -50,38 +53,76 @@ vApplicationStackOverflowHook(xTaskHandle *pxTask,signed portCHAR *pcTaskName)
   for(;;);
 }
 
-
-
-// static inline void
-static void uart_putc(char ch)
+//usart task
+static void uart_task()
 {
-  while (!USART_GetFlagStatus(UART4,USART_FLAG_TXE));
-    USART_SendData(UART4,ch);
+  char ch;
+
+  for (;;) {
+    // Receive char to be TX
+    if ( xQueueReceive(uart_txq,&ch,500) == pdPASS )
+    {
+      GPIO_ToggleBits(GPIO_LED,LED2);
+      while (!USART_GetFlagStatus(UART,USART_FLAG_TXE))
+      // while ( !usart_get_flag(USART1,USART_SR_TXE) )
+        taskYIELD();  // Yield until ready
+      USART_SendData(UART,ch);
+      // usart_send(USART1,ch);
+    }
+    // Toggle LED to show signs of life
+    GPIO_ToggleBits(GPIO_LED,LED1);
+
+  }
 }
 
 
+// static inline void
+// static void uart_putc(char ch)
+// {
+//   while (!USART_GetFlagStatus(UART,USART_FLAG_TXE));
+//     USART_SendData(UART,ch);
+// }
+
+
 // task1(void *args) {
-static void task1()
+// static void task1()
+// {
+//   int c = 66;
+//   int i;
+//   for (;;)
+//   {
+//     GPIO_ToggleBits(GPIO_LED,LED1);
+//     GPIO_ToggleBits(GPIO_LED,LED2);
+//     GPIO_ToggleBits(GPIO_LED,LED3);
+//     GPIO_ToggleBits(GPIO_LED,LED4);
+
+//       uart_putc(c);
+
+//       uart_putc('\r');
+//       uart_putc('\n');
+//     vTaskDelay(pdMS_TO_TICKS(500));
+
+//     // for (i = 0; i < 10000000; i++)
+//     //   __asm__("nop");
+//     // }
+
+//   }
+// }
+static void uart_puts(const char *s)
 {
-  int c = 65;
-  int i;
-  for (;;)
-  {
-    GPIO_ToggleBits(GPIOD,GPIO_Pin_12);
-    GPIO_ToggleBits(GPIOD,GPIO_Pin_13);
-    GPIO_ToggleBits(GPIOD,GPIO_Pin_14);
-    GPIO_ToggleBits(GPIOD,GPIO_Pin_15);
 
-      uart_putc(c);
+  for ( ; *s; ++s ) {
+    // blocks when queue is full
+    xQueueSend(uart_txq,s,portMAX_DELAY);
+  }
+}
 
-      uart_putc('\r');
-      uart_putc('\n');
-    vTaskDelay(pdMS_TO_TICKS(500));
+static void demo_task() {
 
-    // for (i = 0; i < 10000000; i++)
-    //   __asm__("nop");
-    // }
-
+  for (;;) {
+    uart_puts("Now this is a message..\n\r");
+    uart_puts("  sent via FreeRTOS queues.\n\n\r");
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 
@@ -94,12 +135,12 @@ void init_LED()
   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
 
   /* Configure PD12, PD13, PD14 and PD15 in output pushpull mode */
-  GPIO_InitStructure.GPIO_Pin = GPIO_Pin_12 | GPIO_Pin_13| GPIO_Pin_14| GPIO_Pin_15;
+  GPIO_InitStructure.GPIO_Pin = LED1 | LED2 | LED3 | LED4 ;
   GPIO_InitStructure.GPIO_Mode = GPIO_Mode_OUT;
   GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
   GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
-  GPIO_Init(GPIOD, &GPIO_InitStructure);
+  GPIO_Init(GPIO_LED, &GPIO_InitStructure);
 
 }
 
@@ -115,16 +156,16 @@ void init_LED()
   /* Enable UART clock */
   RCC_APB1PeriphClockCmd(RCC_APB1Periph_UART4, ENABLE);
 
-  /* Connect UART4 pins to AF2 */
+  /* Connect UART pins to AF2 */
   GPIO_PinAFConfig(UART_PORT, UART_PIN_TX, UART_PIN_AF);
   GPIO_PinAFConfig(UART_PORT, UART_PIN_RX, UART_PIN_AF);
 
-  /* GPIO Configuration for UART4 Tx */
+  /* GPIO Configuration for UART Tx */
   GPIO_InitStructure.GPIO_Pin   = UART_PIN_TX;
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF;
   GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
   GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP;
-  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
+  GPIO_InitStructure.GPIO_Speed = GPIO_Speed_100MHz;
   GPIO_Init(UART_PORT, &GPIO_InitStructure);
 
   /* GPIO Configuration for USART Rx */
@@ -147,10 +188,10 @@ void init_LED()
   USART_InitStructure.USART_HardwareFlowControl = USART_HardwareFlowControl_None;
   USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
 
-  USART_Init(UART4, &USART_InitStructure);
+  USART_Init(UART, &USART_InitStructure);
   /* Enable USART */
-  USART_Cmd(UART4, ENABLE);
-  // uart_txq =  xQueueCreate(256,sizeof(char));
+  USART_Cmd(UART, ENABLE);
+  uart_txq =  xQueueCreate(256,sizeof(char));
 }
 
 /**
@@ -168,12 +209,15 @@ int main(void)
      */
   int status;
 
-  status = rcc_clock_setup_hse_3v3(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_48MHZ]);
+  status = rcc_clock_setup_hse_3v3(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
 
   init_LED();
   uart_setup();
 
-  xTaskCreate(task1,"task1",100,NULL,configMAX_PRIORITIES-1,NULL);
+  xTaskCreate(uart_task,"UART",100,NULL,configMAX_PRIORITIES-1,NULL);
+  xTaskCreate(demo_task,"DEMO",100,NULL,configMAX_PRIORITIES-2,NULL);
+
+  // xTaskCreate(task1,"task1",100,NULL,configMAX_PRIORITIES-1,NULL);
   vTaskStartScheduler();
 
  while(1)

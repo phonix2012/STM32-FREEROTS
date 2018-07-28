@@ -1,6 +1,6 @@
 # put your *.o targets here, make should handle the rest!
 
-SRCS = main.c stm32f4xx_it.c system_stm32f4xx.c rtos/heap_4.c rtos/list.c rtos/port.c rtos/tasks.c conf_clock.c # rtos/queue.c
+SRCS = main.c stm32f4xx_it.c system_stm32f4xx.c rtos/heap_4.c rtos/list.c rtos/port.c rtos/tasks.c conf_clock.c  rtos/queue.c
 
 # all the files will be generated with this name (main.elf, main.bin, main.hex, etc)
 
