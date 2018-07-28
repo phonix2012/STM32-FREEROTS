@@ -25,7 +25,7 @@
 #include "stm32f4_discovery.h"
 #include "conf_clock.h"
 #include "stm32f4xx_conf.h"
-#include "main.h"
+#include "queue.h"
  // again, added because ST didn't put it here ?
 /** @addtogroup STM32F4_Discovery_Peripheral_Examples
   * @{
@@ -35,38 +35,32 @@
   * @{
   */
 
-
-// static QueueHandle_t uart_txq;    // TX queue for UART
-
 /* Private typedef -----------------------------------------------------------*/
+GPIO_InitTypeDef  GPIO_InitStructure;
+USART_InitTypeDef USART_InitStructure;
 
 extern void vApplicationStackOverflowHook(xTaskHandle *pxTask,signed portCHAR *pcTaskName);
 
 void
-vApplicationStackOverflowHook(xTaskHandle *pxTask,signed portCHAR *pcTaskName)
-{
+vApplicationStackOverflowHook(xTaskHandle *pxTask,signed portCHAR *pcTaskName) {
   (void)pxTask;
   (void)pcTaskName;
   for(;;);
 }
 
 
-
 // static inline void
-static void uart_putc(char ch)
-{
+static void
+uart_putc(char ch) {
   while (!USART_GetFlagStatus(UART4,USART_FLAG_TXE));
     USART_SendData(UART4,ch);
 }
-
-
 // task1(void *args) {
-static void task1()
-{
+static void
+task1() {
   int c = 65;
   int i;
-  for (;;)
-  {
+  for (;;) {
     GPIO_ToggleBits(GPIOD,GPIO_Pin_12);
     GPIO_ToggleBits(GPIOD,GPIO_Pin_13);
     GPIO_ToggleBits(GPIOD,GPIO_Pin_14);
@@ -82,15 +76,33 @@ static void task1()
     //   __asm__("nop");
     // }
 
-  }
 }
+}
+/* Private define ------------------------------------------------------------*/
+/* Private macro -------------------------------------------------------------*/
+/* Private variables ---------------------------------------------------------*/
+/* Private function prototypes -----------------------------------------------*/
+void Delay(__IO uint32_t nCount);
+/* Private functions ---------------------------------------------------------*/
 
-
-
-void init_LED()
+/**
+  * @brief  Main program
+  * @param  None
+  * @retval None
+  */
+int main(void)
 {
-  GPIO_InitTypeDef  GPIO_InitStructure;
-   /* GPIOD Periph clock enable */
+  /*!< At this stage the microcontroller clock setting is already configured,
+       this is done through SystemInit() function which is called from startup
+       file (startup_stm32f4xx.s) before to branch to application main.
+       To reconfigure the default setting of SystemInit() function, refer to
+        system_stm32f4xx.c file
+     */
+  int status;
+
+  status = rcc_clock_setup_hse_3v3(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_168MHZ]);
+
+  /* GPIOD Periph clock enable */
   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOD, ENABLE);
 
   /* Configure PD12, PD13, PD14 and PD15 in output pushpull mode */
@@ -101,36 +113,27 @@ void init_LED()
   GPIO_InitStructure.GPIO_PuPd = GPIO_PuPd_NOPULL;
   GPIO_Init(GPIOD, &GPIO_InitStructure);
 
-}
-
-
-
-
- void uart_setup()
-{
-  GPIO_InitTypeDef  GPIO_InitStructure;
-  USART_InitTypeDef USART_InitStructure;
 
   RCC_AHB1PeriphClockCmd(RCC_AHB1Periph_GPIOA, ENABLE);
   /* Enable UART clock */
   RCC_APB1PeriphClockCmd(RCC_APB1Periph_UART4, ENABLE);
 
   /* Connect UART4 pins to AF2 */
-  GPIO_PinAFConfig(UART_PORT, UART_PIN_TX, UART_PIN_AF);
-  GPIO_PinAFConfig(UART_PORT, UART_PIN_RX, UART_PIN_AF);
+  GPIO_PinAFConfig(GPIOA, GPIO_PinSource0, GPIO_AF_UART4);
+  GPIO_PinAFConfig(GPIOA, GPIO_PinSource1, GPIO_AF_UART4);
 
   /* GPIO Configuration for UART4 Tx */
-  GPIO_InitStructure.GPIO_Pin   = UART_PIN_TX;
+  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_0;
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF;
   GPIO_InitStructure.GPIO_OType = GPIO_OType_PP;
   GPIO_InitStructure.GPIO_PuPd  = GPIO_PuPd_UP;
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_50MHz;
-  GPIO_Init(UART_PORT, &GPIO_InitStructure);
+  GPIO_Init(GPIOA, &GPIO_InitStructure);
 
   /* GPIO Configuration for USART Rx */
-  GPIO_InitStructure.GPIO_Pin   = UART_PIN_RX;
+  GPIO_InitStructure.GPIO_Pin   = GPIO_Pin_1;
   GPIO_InitStructure.GPIO_Mode  = GPIO_Mode_AF;
-  GPIO_Init(UART_PORT, &GPIO_InitStructure);
+  GPIO_Init(GPIOA, &GPIO_InitStructure);
 
   /* USARTx configured as follow:
     - BaudRate = 115200 baud
@@ -148,31 +151,9 @@ void init_LED()
   USART_InitStructure.USART_Mode = USART_Mode_Rx | USART_Mode_Tx;
 
   USART_Init(UART4, &USART_InitStructure);
+
   /* Enable USART */
   USART_Cmd(UART4, ENABLE);
-  // uart_txq =  xQueueCreate(256,sizeof(char));
-}
-
-/**
-  * @brief  Main program
-  * @param  None
-  * @retval None
-  */
-int main(void)
-{
-  /*!< At this stage the microcontroller clock setting is already configured,
-       this is done through SystemInit() function which is called from startup
-       file (startup_stm32f4xx.s) before to branch to application main.
-       To reconfigure the default setting of SystemInit() function, refer to
-        system_stm32f4xx.c file
-     */
-  int status;
-
-  status = rcc_clock_setup_hse_3v3(&rcc_hse_8mhz_3v3[RCC_CLOCK_3V3_48MHZ]);
-
-  init_LED();
-  uart_setup();
-
   xTaskCreate(task1,"task1",100,NULL,configMAX_PRIORITIES-1,NULL);
   vTaskStartScheduler();
 
